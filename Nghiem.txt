@@ -1,0 +1,290 @@
+classdef Nghiem < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                       matlab.ui.Figure
+        Edit_g                         matlab.ui.control.EditField
+        fpEditFieldLabel               matlab.ui.control.Label
+        TmnghimButton                  matlab.ui.control.Button
+        SlnlpEditFieldLabel            matlab.ui.control.Label
+        Drop_method                    matlab.ui.control.DropDown
+        ChnphngphptmChiailpNewtontiptuynDropDownLabel  matlab.ui.control.Label
+        Edit_f                         matlab.ui.control.EditField
+        Edit_interval                  matlab.ui.control.EditField
+        Edit_tol                       matlab.ui.control.NumericEditField
+        NhpsaischophpEditField_2Label  matlab.ui.control.Label
+        Edit_result                    matlab.ui.control.EditField
+        Edit_iterCout                  matlab.ui.control.NumericEditField
+        KtqunghimEditFieldLabel        matlab.ui.control.Label
+        NhpkhongphnlynghimEditFieldLabel  matlab.ui.control.Label
+        NhpphngtrnhEditFieldLabel      matlab.ui.control.Label
+        UIAxes                         matlab.ui.control.UIAxes
+    end
+
+ 
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Button pushed function: TmnghimButton
+        function TmnghimButtonPushed(app, event)
+fx = str2func(['@(x)' app.Edit_f.Value]);
+% 1. XỬ LÝ KHOẢNG PHÂN LY [a, b]
+% Tách chuỗi nhập liệu bằng dấu phẩy ','
+interval_parts = strsplit(app.Edit_interval.Value, ','); 
+
+% KIỂM TRA an toàn: Đảm bảo có đủ 2 phần tử (a và b)
+if length(interval_parts) < 2
+    % Hiển thị cảnh báo cho người dùng
+    uialert(app.UIFigure, 'Vui lòng nhập 2 giá trị cho khoảng [a, b] cách nhau bằng dấu phẩy (ví dụ: 0,5).', 'Lỗi Nhập Liệu', 'Icon', 'error');
+    return; % Ngừng thực thi nếu nhập sai
+end
+
+% Chuyển đổi từ chuỗi (Cell Array) sang số (Numeric)
+a = str2double(interval_parts{1}); % Lấy phần tử thứ nhất
+b = str2double(interval_parts{2}); % Lấy phần tử thứ hai
+
+% KIỂM TRA an toàn: Đảm bảo cả a và b đều là số hợp lệ
+if isnan(a) || isnan(b)
+    uialert(app.UIFigure, 'Giá trị a và b phải là số hợp lệ.', 'Lỗi Dữ Liệu', 'Icon', 'error');
+    return;
+end
+
+saiso = app.Edit_tol.Value;
+% Khởi tạo nghiệm và số lần lặp về giá trị mặc định/lỗi
+nghiem = NaN; 
+solanlap = 0;
+switch app.Drop_method.Value
+
+    case 'Chia đôi'
+        [nghiem, solanlap] = chiadoi(app, fx, a, b, saiso);
+
+    case 'Lặp'
+        fp = app.Edit_g.Value;     
+        [nghiem, solanlap] = lap(app, fp, a, saiso);
+
+    case 'Newton (tiếp tuyến)'
+        % Truyền chuỗi biểu thức f(x)
+        fx_string = app.Edit_f.Value; 
+        [nghiem, solanlap] = tieptuyen(app, fx_string, a, b, saiso);
+end
+
+app.Edit_result.Value = num2str(nghiem);
+app.Edit_iterCout.Value = solanlap;
+
+    %===== THUẬT TOÁN CHIA ĐÔI =====
+            function [nghiem, solanlap] = chiadoi(~, fxi, a, b, saiso) 
+    solanlap = 0;
+    
+    % Kiểm tra điều kiện ban đầu (Cần thêm if fxi(a)*fxi(b) >= 0 )
+    while abs(b - a) >= saiso
+        c = (a + b) / 2;
+        % ... (giữ nguyên logic dùng fxi(c), fxi(a), fxi(b))
+        if abs(fxi(c)) < saiso
+            break; 
+        end
+        
+        if fxi(a) * fxi(c) < 0
+            b = c;
+        else
+            a = c;
+        end
+        solanlap = solanlap + 1;
+    end
+    nghiem = (a + b) / 2;
+end
+
+    %===== THUẬT TOÁN LẶP =====
+            function [nghiem, solanlap] = lap(~, g, x0, saiso)
+        solanlap = 0;
+        x = x0;
+        gfun = str2func(['@(x)' g]);
+        while true
+            x_new = gfun(x);
+            solanlap = solanlap + 1;
+            if abs(x_new - x) < saiso
+                break;
+            end
+            x = x_new;
+        end
+        nghiem = x_new;
+    end
+%===== THUẬT TOÁN NEWTON (TIẾP TUYẾN) =====
+ function [nghiem, solanlap] = tieptuyen(app, fx_str, a, ~, saiso) % Nhận chuỗi fx_str
+        
+        % 1. Xử lý Symbolic để tìm đạo hàm
+        syms x
+        f_sym = str2sym(fx_str);       
+        df_sym = diff(f_sym, x);       
+        
+        % 2. Chuyển thành Function Handle
+        f = matlabFunction(f_sym);     % f(x)
+        df = matlabFunction(df_sym);    % f'(x)
+        
+        % 3. Thực hiện lặp Newton
+        x0 = (a + b)/2;   % trung điểm hội tụ tốt hơn dùng a
+        solanlap = 0;
+        
+        while true
+            df_val = df(x0);
+            
+            % Kiểm tra đạo hàm bằng 0
+            if abs(df_val) < 1e-10 
+                uialert(app.UIFigure, 'Đạo hàm f''(x) = 0 tại x0, thuật toán không hội tụ.', 'Lỗi', 'error');
+                nghiem = NaN;
+                solanlap = 0;
+                return;
+            end
+            
+            x1 = x0 - f(x0) / df_val;
+            solanlap = solanlap + 1;
+            
+            if abs(x1 - x0) < saiso
+                break;
+            end
+            x0 = x1;
+        end
+        nghiem = x1;
+    end
+   % Vẽ đồ thị hàm
+    x = linspace(a, b, 300);
+    y = arrayfun(fx, x);
+    plot(app.UIAxes, x, y, 'LineWidth', 2);
+    hold(app.UIAxes, 'on');
+    plot(app.UIAxes, nghiem, fx(nghiem), 'ro', 'MarkerSize', 8, 'LineWidth', 2);
+    hold(app.UIAxes, 'off');
+       
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 640 480];
+            app.UIFigure.Name = 'MATLAB App';
+
+            % Create UIAxes
+            app.UIAxes = uiaxes(app.UIFigure);
+            title(app.UIAxes, 'Title')
+            xlabel(app.UIAxes, 'X')
+            ylabel(app.UIAxes, 'Y')
+            zlabel(app.UIAxes, 'Z')
+            app.UIAxes.Position = [332 251 300 185];
+
+            % Create NhpphngtrnhEditFieldLabel
+            app.NhpphngtrnhEditFieldLabel = uilabel(app.UIFigure);
+            app.NhpphngtrnhEditFieldLabel.HorizontalAlignment = 'right';
+            app.NhpphngtrnhEditFieldLabel.Position = [35 438 107 22];
+            app.NhpphngtrnhEditFieldLabel.Text = 'Nhập phương trình';
+
+            % Create NhpkhongphnlynghimEditFieldLabel
+            app.NhpkhongphnlynghimEditFieldLabel = uilabel(app.UIFigure);
+            app.NhpkhongphnlynghimEditFieldLabel.HorizontalAlignment = 'right';
+            app.NhpkhongphnlynghimEditFieldLabel.Position = [35 365 164 22];
+            app.NhpkhongphnlynghimEditFieldLabel.Text = 'Nhập khoảng phân ly nghiệm ';
+
+            % Create KtqunghimEditFieldLabel
+            app.KtqunghimEditFieldLabel = uilabel(app.UIFigure);
+            app.KtqunghimEditFieldLabel.HorizontalAlignment = 'right';
+            app.KtqunghimEditFieldLabel.Position = [35 278 89 22];
+            app.KtqunghimEditFieldLabel.Text = 'Kết quả nghiệm';
+
+            % Create Edit_iterCout
+            app.Edit_iterCout = uieditfield(app.UIFigure, 'numeric');
+            app.Edit_iterCout.Position = [108 230 100 22];
+
+            % Create Edit_result
+            app.Edit_result = uieditfield(app.UIFigure, 'text');
+            app.Edit_result.Position = [139 278 100 22];
+
+            % Create NhpsaischophpEditField_2Label
+            app.NhpsaischophpEditField_2Label = uilabel(app.UIFigure);
+            app.NhpsaischophpEditField_2Label.HorizontalAlignment = 'right';
+            app.NhpsaischophpEditField_2Label.Position = [35 322 121 22];
+            app.NhpsaischophpEditField_2Label.Text = 'Nhập sai số cho phép';
+
+            % Create Edit_tol
+            app.Edit_tol = uieditfield(app.UIFigure, 'numeric');
+            app.Edit_tol.Position = [171 322 100 22];
+            app.Edit_tol.Value = 0.005;
+
+            % Create Edit_interval
+            app.Edit_interval = uieditfield(app.UIFigure, 'text');
+            app.Edit_interval.Position = [214 365 100 22];
+            app.Edit_interval.Value = '-1,2';
+
+            % Create Edit_f
+            app.Edit_f = uieditfield(app.UIFigure, 'text');
+            app.Edit_f.Position = [157 438 100 22];
+            app.Edit_f.Value = 'x - sin(x) - 0.25';
+
+            % Create ChnphngphptmChiailpNewtontiptuynDropDownLabel
+            app.ChnphngphptmChiailpNewtontiptuynDropDownLabel = uilabel(app.UIFigure);
+            app.ChnphngphptmChiailpNewtontiptuynDropDownLabel.HorizontalAlignment = 'right';
+            app.ChnphngphptmChiailpNewtontiptuynDropDownLabel.Position = [31 184 318 22];
+            app.ChnphngphptmChiailpNewtontiptuynDropDownLabel.Text = 'Chọn phương pháp tìm: Chia đôi, lặp, Newton (tiếp tuyến)';
+
+            % Create Drop_method
+            app.Drop_method = uidropdown(app.UIFigure);
+            app.Drop_method.Items = {'Chia đôi', 'Lặp', 'Newton (tiếp tuyến)'};
+            app.Drop_method.Position = [364 184 100 22];
+            app.Drop_method.Value = 'Chia đôi';
+
+            % Create SlnlpEditFieldLabel
+            app.SlnlpEditFieldLabel = uilabel(app.UIFigure);
+            app.SlnlpEditFieldLabel.HorizontalAlignment = 'right';
+            app.SlnlpEditFieldLabel.Position = [35 230 58 22];
+            app.SlnlpEditFieldLabel.Text = 'Số lần lặp';
+
+            % Create TmnghimButton
+            app.TmnghimButton = uibutton(app.UIFigure, 'push');
+            app.TmnghimButton.ButtonPushedFcn = createCallbackFcn(app, @TmnghimButtonPushed, true);
+            app.TmnghimButton.Position = [271 128 100 22];
+            app.TmnghimButton.Text = 'Tìm nghiệm';
+
+            % Create fpEditFieldLabel
+            app.fpEditFieldLabel = uilabel(app.UIFigure);
+            app.fpEditFieldLabel.HorizontalAlignment = 'right';
+            app.fpEditFieldLabel.Position = [26 402 25 22];
+            app.fpEditFieldLabel.Text = 'fp';
+
+            % Create Edit_g
+            app.Edit_g = uieditfield(app.UIFigure, 'text');
+            app.Edit_g.Position = [66 402 100 22];
+            app.Edit_g.Value = 'sin(x) + 0.25';
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = Nghiem
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
